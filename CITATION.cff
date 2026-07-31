@@ -14,10 +14,10 @@ authors:
     orcid: "https://orcid.org/0000-0002-0334-0014"
 version: "1.0.0"
 date-released: "2016-08-01"
-url: "TODO: https://github.com/<org>/<repo>"   # add once the repository is created
+url: "https://github.com/htw-solarspeichersysteme/wbsim"   # add once the repository is created
 # doi: "TODO: 10.5281/zenodo.xxxxxxx"   # add once archived on Zenodo
 license: "MIT"
-repository-code: "TODO: https://github.com/<org>/<repo>"
+repository-code: "https://github.com/htw-solarspeichersysteme/wbsim"
 abstract: >
   Python implementation of the wbsim simulation model for evaluating the
   performance of residential solar-optimised EV charging stations
