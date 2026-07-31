@@ -116,12 +116,13 @@ wbsim/
 ├── src/
 │   ├── __init__.py
 │   ├── dataclass_definitions.py   # Wallbox / EV / ForecastSettings / DriveProfile dataclasses
-│   ├── utils.py                   # load_Pd, load_drive_profile, idx2timeseries, decode_inputs
+│   ├── utils.py                   # load_Pd, load_drive_profile, idx2timeseries, decode_inputs, find_project_root
 │   ├── wbsim.py                   # wbsim_7_81() – main simulation function
 │   ├── simulation_call.py         # Example entry point / script to run a simulation
 │   └── graph.py                   # Loads simulation output (.pkl) and plots results
 │
 ├── requirements.txt
+├── requirements-plotting.txt      # optional: only for graph.py
 ├── pyproject.toml
 └── README.md                      # This file
 ```
@@ -136,21 +137,17 @@ There are two ways to install dependencies, depending on what you want:
 
 **A) Reproduce the manuscript's results exactly** — use the pinned
 `requirements.txt`. This is the recommended path if you just want to run
-the simulation as published.
+the simulation as published. It installs only the core dependencies —
+plotting (`graph.py`) pulls in a noticeably heavier stack (plotly,
+plotly-resampler, Jupyter widgets) and is kept separate so installation
+stays fast if you don't need it; see [4.3](#43-visualizing-results) for
+the extra step if you do.
 
 ```text
 # core – required to run the simulation
 numpy==2.4.4
 pandas==3.0.2
 numba==0.64.0
-
-# optional – for graph.py (interactive plotting in Jupyter)
-plotly==6.0.0
-plotly-resampler==0.11.0
-ipywidgets>=8.0.0
-anywidget>=0.9.0
-nbformat>=5.9.0
-pytz>=2024.1
 ```
 
 ```bash
@@ -162,17 +159,21 @@ coupled -- if you need a different numpy version, check numba's
 compatibility notes before changing the pin.
 
 **B) Use wbsim as an installable package** — e.g. to `import wbsim`-style
-modules from another project, or to develop against it. `pyproject.toml`
-declares the same dependencies as minimum-version floors (not exact pins),
-so installing wbsim doesn't force version conflicts in an existing
-environment.
+modules from another project. `pyproject.toml` declares the same
+dependencies as minimum-version floors (not exact pins), so installing
+wbsim doesn't force version conflicts in an existing environment.
 
 ```bash
-pip install .            # regular install
-pip install -e .         # editable install, for development
-pip install -e ".[plotting]"   # + graph.py's plotting stack
-pip install -e ".[validation]" # + scipy, for the planned MATLAB-comparison workflow
+pip install .                  # core only
+pip install ".[plotting]"      # + graph.py's plotting stack
+pip install ".[validation]"    # + scipy, for the planned MATLAB-comparison workflow
 ```
+
+> Avoid `pip install -e .` (editable install) for running the simulation
+> itself — editable installs of this flat py-modules layout can, on some
+> setuptools versions, misplace where files are read from/written to
+> (see `utils.find_project_root()`). Use `-e` only when importing wbsim's
+> modules from another project you're developing against.
 
 Nevertheless you have to download the input data externally from  [10.5281/zenodo.21672007](https://doi.org/10.5281/zenodo.21672007) as github allows only small file sizes.
 
@@ -280,11 +281,19 @@ with open("data/processed/sim_results.pkl", "wb") as f:
 
 ### 4.3 Visualizing results
 
+`graph.py` needs the plotting extras, which aren't in `requirements.txt`
+(see [Requirements](#3-requirements)) — install them once:
+
+```bash
+pip install -r requirements-plotting.txt
+```
+
 ```bash
 python -m src.graph
 ```
 The skript expects a "data/processed/sim_results.pkl" from simulation_call
-and could be easily customized.
+and could be easily customized. If the plotting extras aren't installed,
+it fails with a clear message telling you to run the command above.
 
 
 ---
@@ -403,5 +412,3 @@ confirm equivalence (see Section 9, once available).
 
 This repository is licensed under the [MIT License](https://opensource.org/license/mit/).
 See the `LICENSE` file for the full text.
-
-
