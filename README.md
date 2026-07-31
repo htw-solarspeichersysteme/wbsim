@@ -166,7 +166,6 @@ wbsim doesn't force version conflicts in an existing environment.
 ```bash
 pip install .                  # core only
 pip install ".[plotting]"      # + graph.py's plotting stack
-pip install ".[validation]"    # + scipy, for the planned MATLAB-comparison workflow
 ```
 
 > Avoid `pip install -e .` (editable install) for running the simulation
