@@ -15,7 +15,7 @@ authors:
 version: "1.0.0"
 date-released: "2016-08-01"
 url: "https://github.com/htw-solarspeichersysteme/wbsim"   # add once the repository is created
-# doi: "TODO: 10.5281/zenodo.xxxxxxx"   # add once archived on Zenodo
+# doi: "https://doi.org/10.5281/zenodo.21728808"   # add once archived on Zenodo
 license: "MIT"
 repository-code: "https://github.com/htw-solarspeichersysteme/wbsim"
 abstract: >
