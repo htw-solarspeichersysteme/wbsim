@@ -10,11 +10,95 @@
 #                           pre-compute all arrays needed by the @jit loop
 
 import json
+import os
 import re
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Optional
+
+
+# =============================================================================
+# find_project_root
+#
+# Used by simulation_call.py and graph.py to locate data/raw, data/config
+# and data/processed -- centralised here since both entry-point scripts
+# need the identical logic.
+#
+# Both scripts still need one line of their own before this is reachable:
+#   sys.path.insert(0, str(Path(__file__).resolve().parent))
+# That finds *this* file (utils.py, a sibling in src/) reliably -- it's
+# always exactly "wherever simulation_call.py/graph.py itself is", so it
+# doesn't have the ambiguity problem find_project_root() below is for.
+# Only once utils.py is importable can find_project_root() be called for
+# the (harder) question of where the data/ folders are.
+# =============================================================================
+def find_project_root() -> Path:
+    """
+    Determine the project root (the folder containing src/ and data/).
+
+    Resolution order:
+      1. WBSIM_PROJECT_ROOT environment variable, if set (an explicit,
+         set-once override -- the standard way to configure this kind
+         of path in Python/Unix tooling, rather than an interactive
+         prompt, since callers also need to run non-interactively,
+         e.g. imported from a notebook or a batch job).
+      2. The current working directory -- the documented way to run
+         simulation_call.py/graph.py is
+         `cd <project root> && python -m src.simulation_call`, so cwd
+         should already be correct for anyone following the Quickstart.
+
+    Either candidate is validated (must contain a src/ and a data/raw/
+    subdirectory) before being trusted, so a wrong guess fails loudly
+    and immediately with a concrete next step, instead of silently
+    reading/writing files in the wrong place.
+
+    Why not derive it from __file__ (e.g. `.parent.parent` in the
+    calling script)? That assumes the calling script always lives
+    exactly two levels below the project root -- true for a cloned
+    repo, but not guaranteed after `pip install -e .`: depending on
+    the setuptools version, an editable install of a flat py-modules
+    layout (see pyproject.toml) can copy the .py files into the
+    virtualenv's site-packages instead of linking back to the repo,
+    silently redirecting every read/write. cwd-based resolution with
+    validation sidesteps this regardless of how/where the calling
+    script physically ended up.
+
+    Why not search upward for a marker file like pyproject.toml? That
+    filename isn't guaranteed unique -- if this project is ever nested
+    inside another repo, the search could stop at the wrong ancestor
+    and again point somewhere unintended, just as silently. Validating
+    the concrete expected layout is more specific than trusting a
+    filename to only ever appear at the real root.
+    """
+    env_override = os.environ.get("WBSIM_PROJECT_ROOT")
+    if env_override:
+        candidate = Path(env_override).resolve()
+        if not _looks_like_project_root(candidate):
+            raise RuntimeError(
+                f"WBSIM_PROJECT_ROOT={candidate} does not look like the "
+                "project root (expected a src/ and a data/raw/ "
+                "subdirectory there)."
+            )
+        return candidate
+
+    candidate = Path.cwd()
+    if _looks_like_project_root(candidate):
+        return candidate
+
+    raise RuntimeError(
+        f"Could not confirm the project root from the current working "
+        f"directory ({candidate}) -- expected a src/ and a data/raw/ "
+        "subdirectory there.\n"
+        "Run this script from the project root "
+        "(e.g. `cd <project root> && python -m src.simulation_call`), "
+        "or set the WBSIM_PROJECT_ROOT environment variable explicitly."
+    )
+
+
+def _looks_like_project_root(p: Path) -> bool:
+    """True if `p` has the expected project layout (src/, data/raw/)."""
+    return (p / "src").is_dir() and (p / "data" / "raw").is_dir()
 
 
 # =============================================================================

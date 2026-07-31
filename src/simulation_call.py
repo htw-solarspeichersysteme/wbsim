@@ -23,10 +23,14 @@ import sys
 from pathlib import Path
 from dataclasses import replace
 
-# --- Locate project root and register module search paths ---
-# _PROJECT_ROOT is the wb_simulation/ folder (parent of src/).
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+# Find this file's own folder (src/) first -- always correct regardless
+# of install-path weirdness, since utils.py (imported right below) is a
+# sibling file. See utils.py's find_project_root() docstring for the
+# harder problem this doesn't solve (locating data/raw, data/config).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from utils import find_project_root
+
+_PROJECT_ROOT = find_project_root()
 sys.path.insert(0, str(_PROJECT_ROOT / "data" / "config"))
 
 # --- Module imports (all absolute after path setup above) ---
@@ -48,6 +52,7 @@ OUTPUT_DIR  = _PROJECT_ROOT / "data" / "processed"
 
 
 def main():
+    print(f"[simulation_call.py] project root: {_PROJECT_ROOT}")
     # =========================================================================
     # 1. Load surplus power time series
     # =========================================================================
