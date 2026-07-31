@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wbsim"
+version = "1.0.0"
+description = "Performance indicator simulation for solar-optimised EV charging stations (Python port of wbsim_7_81.m)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Joseph Bergner" },
+    { name = "Nico Orth" },
+]
+
+# Lower-bound version constraints, matching the versions this release was
+# tested against (see requirements.txt for the exact pins used to produce
+# the manuscript's results). A library's own dependency spec is kept as a
+# floor rather than an exact pin, so it doesn't force conflicts for anyone
+# installing wbsim into an existing environment; requirements.txt is the
+# place for exact reproducibility, this file is the place for "what does
+# this package need to run at all".
+dependencies = [
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "numba>=0.64.0",
+]
+
+[project.optional-dependencies]
+# Interactive plotting (graph.py). Matches the plotting block in
+# requirements.txt.
+plotting = [
+    "plotly>=6.0.0",
+    "plotly-resampler>=0.11.0",
+    "ipywidgets>=8.0.0",
+    "anywidget>=0.9.0",
+    "nbformat>=5.9.0",
+    "pytz>=2024.1",
+]
+
+# Forward-looking: not required by any code in this release. Reserved for
+# the planned MATLAB-vs-Python validation workflow (comparing wbsim_7_81.m
+# reference output against this Python port via scipy.io.loadmat).
+validation = [
+    "scipy>=1.10.0",
+]
+
+[project.urls]
+Homepage = "https://solar.htw-berlin.de/studien/wallbox-inspektion-2025/"
+"Joseph Bergner (ORCID)" = "https://orcid.org/0009-0003-7012-6645"
+"Nico Orth (ORCID)" = "https://orcid.org/0000-0002-0334-0014"
+
+# --- Flat src/ layout: modules are installed as top-level imports -----------
+# This mirrors the current import style used throughout the project
+# (e.g. `from utils import load_Pd`, `from wbsim import wbsim_7_81`)
+# without needing the sys.path.insert() workaround in simulation_call.py.
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = [
+    "dataclass_definitions",
+    "utils",
+    "wbsim",
+    "simulation_call",
+    "graph",
+]

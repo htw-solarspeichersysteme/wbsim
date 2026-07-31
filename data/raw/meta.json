@@ -1,0 +1,8 @@
+{
+    "file": "Pd.csv",
+    "description": "Surplus power of an 10 kW PV system with 5000 kWh/a consumption. Dataset from 'Storage Inspektion'",
+    "start_timestamp": 1388534400,
+    "sampling_interval": 1,
+    "unit_power": "W",
+    "encoding": "implicit_index"
+}
