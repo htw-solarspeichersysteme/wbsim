@@ -13,17 +13,34 @@
 import sys
 from pathlib import Path
 
+# Find this file's own folder (src/) first -- always correct regardless
+# of install-path weirdness, since utils.py (imported right below) is a
+# sibling file. See utils.py's find_project_root() docstring for the
+# harder problem this doesn't solve (locating data/raw, data/processed).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from utils import find_project_root
+
 # --- Locate project root and register module search paths ---
-# _PROJECT_ROOT is the wb_simulation/ folder (parent of src/).
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+_PROJECT_ROOT = find_project_root()
+print(f"[graph.py] project root: {_PROJECT_ROOT}")
 sys.path.insert(0, str(_PROJECT_ROOT / "data" / "processed"))
 
 import pickle
-import plotly.io as pio
-pio.renderers.default = "vscode"
-from plotly_resampler import FigureWidgetResampler
-import plotly.graph_objects as go
+
+try:
+    import plotly.io as pio
+    pio.renderers.default = "vscode"
+    from plotly_resampler import FigureWidgetResampler
+    import plotly.graph_objects as go
+except ImportError as e:
+    raise ImportError(
+        "graph.py needs the plotting extras, which are intentionally NOT "
+        "part of requirements.txt (they're a heavy stack -- plotly, "
+        "plotly-resampler, Jupyter widgets -- only needed if you actually "
+        "want to plot). Install them with:\n"
+        "    pip install -r requirements-plotting.txt\n"
+        "or, if using pyproject.toml: pip install \".[plotting]\""
+    ) from e
 
 #%% Load Data
 with open(_PROJECT_ROOT / "data/processed/sim_results.pkl", "rb") as f: #"rb"=read binary
