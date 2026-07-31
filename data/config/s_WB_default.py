@@ -54,8 +54,9 @@ s_WB_default = Wallbox(
     t_release=0.083333333333333,
 
     # --- Phase switch thresholds [W] ---
-    P_ps_3to1_low=3794.822226868040,
-    P_ps_1to3_upper=4266.493049290078,
+    P_ps_3to1_low=3889.692782539741,
+    P_ps_1to3_upper=4159.830723057827,
+ 
 
     # --- Current overrides: not used for this parameter set ---
     Imin=None,
