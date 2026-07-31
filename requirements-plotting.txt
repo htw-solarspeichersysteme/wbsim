@@ -1,0 +1,9 @@
+# Optional: only needed to run graph.py (interactive plotting).
+# Install in addition to requirements.txt:
+#   pip install -r requirements.txt -r requirements-plotting.txt
+plotly==6.0.0
+plotly-resampler==0.11.0
+ipywidgets>=8.0.0
+anywidget>=0.9.0
+nbformat>=5.9.0
+pytz>=2024.1
