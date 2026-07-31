@@ -1,19 +1,15 @@
+# Core dependencies -- required to run the simulation itself.
 # Pinned to exact versions for reproducibility (see manuscript methodology).
 # Verify in your target environment before publication -- numba/numpy/pandas
 # are tightly coupled, and this file was assembled in a sandbox without
 # network access to numba's installer, so the numba pin is based on its
 # published compatibility notes (0.64.0 added NumPy 2.4 support) rather
 # than a local install-and-test cycle.
-
-# --- core: required to run the simulation ---
+#
+# Plotting (graph.py) is intentionally NOT included here -- it pulls in a
+# comparatively heavy stack (plotly, plotly-resampler, Jupyter widgets)
+# that noticeably slows down installation for anyone who only wants to
+# run/reproduce the simulation. See requirements-plotting.txt.
 numpy==2.4.4
 pandas==3.0.2
 numba==0.64.0
-
-# --- optional: plotting (graph.py) ---
-plotly==6.0.0
-plotly-resampler==0.11.0
-ipywidgets>=8.0.0
-anywidget>=0.9.0
-nbformat>=5.9.0
-pytz>=2024.1
