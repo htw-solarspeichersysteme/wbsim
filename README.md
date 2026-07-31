@@ -1,8 +1,8 @@
-# wbsim – Performance Indicator for Solar-Optimised EV Charging Stations
+# wbsim – Open python simulation model for EV charger efficiency analysis
 
 This repository contains the simulation model **wbsim** for the performance
 evaluation of residential EV charging stations (wallboxes). It is a Python
-port of the original MATLAB model `wbsim_7_81.m`, developed as part of the
+port of the original MATLAB model, developed as part of the
 research project *Wallbox-Inspektion*, and was the basis for the following
 studies:
 
@@ -11,6 +11,7 @@ studies:
 - Performance indicator for residential solar-optimised EV chargers
   https://doi.org/10.1049/icp.2025.4140
 - [Wallbox-Inspektion 2025](https://solar.htw-berlin.de/studien/wallbox-inspektion-2025/)
+- Benchmarking Solar-Optimized Electric Vehicle Charging Systems: An Open and Reproducible Evaluation Method (in publication)
 
 The model is fully parametrizable to simulate different wallboxes under
 identical framework conditions. This Python export make the model openly
@@ -34,8 +35,8 @@ Mobility profiles include arrival/departure times and vehicle
 consumption in kWh. The example profile used here represents an EV with ~9,619 km
 per year and a 70 kWh battery, driven by a city-living employee.
 
-The EV is modelled as a simplified, lossless battery storage system with
-ideal control behaviour. This simplification is deliberate: it isolates the
+The EV is modeled as a simplified, lossless battery storage system with
+ideal control behavior. This simplification is deliberate: it isolates the
 influence of the charger itself. The model is nonetheless prepared to
 integrate EV losses (on-board-charger efficiency, own consumption) if
 needed for future studies.
@@ -47,19 +48,19 @@ surplus-oriented ("solar") mode, adapting to available PV generation. Only
 if the target SOC would otherwise not be reached does the charger switch to
 a fallback mode, charging at full power at the latest feasible point in
 time — plus a safety margin reflecting imperfect forecasts. The model is prepared
-for more sophisticated plug-in behaivor following the literature.
+for more sophisticated plug-in behavior following the literature.
 
 Actual charging power is determined in three sequential steps:
 
 1. **Status evaluation** — waiting, standby, or charging.
-2. **Set-point derivation** — discretising the (dead-time-delayed) surplus
+2. **Set-point derivation** — discretizing the (dead-time-delayed) surplus
    power and incorporating steady-state control deviations.
 3. **Control translation** — mapping the set-point to the physical device
-   behaviour, accounting for settling times, transient dynamics (PT1
-   response or rate-limited ramping), and further discretisation.
+   behavior, accounting for settling times, transient dynamics (PT1
+   response or rate-limited ramping), and further discretization.
 
 The result is a discrete EV-charging power profile reproducing both the
-power deviations and the dynamic behaviour observed in laboratory
+power deviations and the dynamic behavior observed in laboratory
 measurements.
 
 ### 1.2 Simulation flow
@@ -85,10 +86,10 @@ measurements.
   power input can be manipulated accordingly.*
 - Whenever the EV's battery is not sufficiently charged for its next trip,
   it is assumed to be externally recharged and returns home at 25% SOC.
-- Forecasts of driving behaviour are assumed to be perfect, but a safety
+- Forecasts of driving behavior are assumed to be perfect, but a safety
   margin (a fraction of the EV's battery capacity) is always added to
   reflect real-world forecast uncertainty.
-- Plug-in behaviour defaults to "plug in on arrival".
+- Plug-in behavior defaults to "plug in on arrival".
 - The EV is lossless by default. To model charging losses, a quadratic
   loss function derived from measurements can be supplied (see e.g.
   https://doi.org/10.1016/j.seta.2023.103512).
@@ -173,7 +174,7 @@ pip install -e ".[plotting]"   # + graph.py's plotting stack
 pip install -e ".[validation]" # + scipy, for the planned MATLAB-comparison workflow
 ```
 
-Nevertheless you have to download the input data externally from  [10.5281/zenodo.21672007](https://doi.org/10.5281/zenodo.21672007) as github allowes only small file sizes.
+Nevertheless you have to download the input data externally from  [10.5281/zenodo.21672007](https://doi.org/10.5281/zenodo.21672007) as github allows only small file sizes.
 
 ---
 
@@ -277,7 +278,7 @@ with open("data/processed/sim_results.pkl", "wb") as f:
 > parameters change, but not when only re-running the same configuration.
 > See `simulation_call.py` for a complete example.
 
-### 4.3 Visualising results
+### 4.3 Visualizing results
 
 ```bash
 python -m src.graph
