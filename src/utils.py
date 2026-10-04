@@ -285,6 +285,7 @@ def load_drive_profile(
     Parameters
     ----------
     csv_path : path to CSV with columns [departure, arrival, SOE]
+               (legacy German headers [Abfahrt, Ankunft, SOE] are accepted too)
     dtime    : simulation time axis (datetime64[ns], length t)
 
     Returns
@@ -308,6 +309,15 @@ def load_drive_profile(
     """
     t  = len(dtime)
     df = pd.read_csv(csv_path)
+
+    # Accept both English (current) and German (legacy) column headers
+    df = df.rename(columns={"Abfahrt": "departure", "Ankunft": "arrival"})
+    missing = {"departure", "arrival", "SOE"} - set(df.columns)
+    if missing:
+        raise KeyError(
+            f"Driving profile '{csv_path}' is missing column(s) {sorted(missing)}; "
+            "expected columns: departure, arrival, SOE."
+        )
 
     departure_raw = _robust_parse_datetime(df["departure"])
     arrival_raw = _robust_parse_datetime(df["arrival"])
@@ -628,7 +638,10 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     I_range = np.unique(I_range)
 
     icp = s.WB.icp_deviation_fn
-    if callable(icp) and getattr(s.WB, 'ideal', 0) != 1:
+    if getattr(s.WB, 'ideal', 0) == 1:
+        # Ideal system: no steady-state control deviation
+        deviation_lookup = np.zeros(len(I_range), dtype=np.float64)
+    elif callable(icp):
         deviation_lookup = np.array([icp(i) for i in I_range], dtype=np.float64)
     else:
         deviation_lookup = np.full(len(I_range),

@@ -1,6 +1,7 @@
 # src/simulation_call.py
 #
-# Entry point for a single simulation run with default parameters.
+# Entry point for a single simulation run with default parameters,
+# including the performance indicator (PI).
 #
 # Run from the project root:
 #   python -m src.simulation_call
@@ -39,6 +40,7 @@ from types import SimpleNamespace
 import pickle
 from utils import load_Pd, load_drive_profile, decode_inputs
 from wbsim import wbsim_7_81
+from metrics import performance_indicator, CostParameters
 from s_WB_default import s_WB_default
 from s_EV_default import s_EV_default
 
@@ -80,8 +82,9 @@ def main():
     # Bundle WB and EV parameter sets into a single namespace.
     s = SimpleNamespace(WB=s_WB, EV=s_EV_default)
 
-    pl     = 0     # forecast: 0 = disabled, ForecastSettings instance = enabled
+    pl           = 0     # forecast: 0 = disabled, ForecastSettings instance = enabled
     random_draws = None  # random plug-in: None = disabled, 1 = new seed, array = reuse
+    cost         = CostParameters(c_g2ac=0.32, c_pv2g=0.08)   # [EUR/kWh]
 
     # =========================================================================
     # 4. Decode inputs
@@ -102,37 +105,56 @@ def main():
     E_b   = results["E_b"]     # battery state of energy [kWh]
 
     # =========================================================================
-    # 6. Postcalculations
+    # 6. Performance indicator (runs the ideal reference simulation)
+    # =========================================================================
+    # random_draws now holds the array returned by decode_inputs(), so the
+    # ideal run sees identical plug-in behaviour. To evaluate further wallbox
+    # parameter sets against the same ideal reference, pass
+    # P_wb_ideal=pi["P_wb_ideal"] in subsequent calls.
+    pi = performance_indicator(P_wb, Pd, s, lp, pl, random_draws, cost)
+    P_wb_ideal = pi["P_wb_ideal"]   # wallbox AC power, ideal [W]
+
+    # =========================================================================
+    # 7. Postcalculations
     # =========================================================================
     Pdp    = np.maximum(0, Pd)
     Pg2wb  = np.maximum(P_wb - Pdp, 0)
     Ppv2wb = np.minimum(Pdp, P_wb)
 
     # =========================================================================
-    # 7. Quick summary
+    # 8. Quick summary
     # =========================================================================
     print(f"Simulation complete  –  {len(Pd):,} timesteps  ({len(Pd)/3600:.1f} h)")
     print(f"  Wallbox : Energy (total) ={np.sum(P_wb)*dt/1000:.1f} kWh Power mean={P_wb.mean():.1f} W")
     print(f"            Energy PV={np.sum(Ppv2wb)*dt/1000:.1f} kWh   Energy Grid={np.sum(Pg2wb)*dt/1000:.1f} kWh")
+    print(f"  Ideal   : Energy (total) ={np.sum(P_wb_ideal)*dt/1000:.1f} kWh")
+    print(f"  EV demand (reference)    ={pi['E_EV_kWh']:.1f} kWh  ->  C_g2wb_all = {pi['C_g2wb_all']:.2f} EUR")
+    print(f"  Grid cost   ideal / real = {pi['C_g2wb_ideal']:.2f} / {pi['C_g2wb_real']:.2f} EUR")
+    print(f"  Feed-in rev ideal / real = {pi['C_pv2g_ideal']:.2f} / {pi['C_pv2g_real']:.2f} EUR")
+    print(f"  PI = {pi['PI']*100:.2f} %")
 
     # =========================================================================
-    # 8. Save results
+    # 9. Save results
     # =========================================================================
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    np.save(OUTPUT_DIR / "P_wb.npy",   P_wb)
-    np.save(OUTPUT_DIR / "P_bat.npy",  P_bat)
-    np.save(OUTPUT_DIR / "P_obc.npy",  P_obc)
-    np.save(OUTPUT_DIR / "E_b.npy",    E_b)
-    np.save(OUTPUT_DIR / "Ppv2wb.npy", Ppv2wb)
-    np.save(OUTPUT_DIR / "Pg2wb.npy",  Pg2wb)
-    np.save(OUTPUT_DIR / "Pdp.npy",    Pdp)
-    np.save(OUTPUT_DIR / "Pd.npy",     Pd)
+    np.save(OUTPUT_DIR / "P_wb.npy",       P_wb)
+    np.save(OUTPUT_DIR / "P_wb_ideal.npy", P_wb_ideal)
+    np.save(OUTPUT_DIR / "P_bat.npy",      P_bat)
+    np.save(OUTPUT_DIR / "P_obc.npy",      P_obc)
+    np.save(OUTPUT_DIR / "E_b.npy",        E_b)
+    np.save(OUTPUT_DIR / "Ppv2wb.npy",     Ppv2wb)
+    np.save(OUTPUT_DIR / "Pg2wb.npy",      Pg2wb)
+    np.save(OUTPUT_DIR / "Pdp.npy",        Pdp)
+    np.save(OUTPUT_DIR / "Pd.npy",         Pd)
 
-    results["Pd"]     = Pd
-    results["Pdp"]    = Pdp
-    results["Ppv2wb"] = Ppv2wb
-    results["Pg2wb"]  = Pg2wb
-    results["dtime"]  = dtime
+    results["P_wb_ideal"] = P_wb_ideal
+    results["PI"]         = pi["PI"]
+    results["costs"]      = {k: v for k, v in pi.items() if k != "P_wb_ideal"}
+    results["Pd"]         = Pd
+    results["Pdp"]        = Pdp
+    results["Ppv2wb"]     = Ppv2wb
+    results["Pg2wb"]      = Pg2wb
+    results["dtime"]      = dtime
 
     with open(OUTPUT_DIR / "sim_results.pkl", "wb") as f:
         pickle.dump(results, f)
