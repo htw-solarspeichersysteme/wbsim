@@ -508,6 +508,7 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     # =========================================================================
     dt    = float(s.WB.dt)
     steps_per_minute = 1.0 / 60.0 / dt
+    step_s           = dt * 3600.0      # length of one time step [s]
 
     P_WB2EV_min    = float(s.WB.P_WB2EV_min)
     P_WB2EV_max    = float(s.WB.P_WB2EV_max)
@@ -545,12 +546,18 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     t_DEAD = float(s.WB.t_DEAD)
 
     t_CONSTANTpos, t_CONSTANTneg = _compute_time_constants(s.WB, t_DEAD)
-    use_pt1_dynamics     = bool(t_CONSTANTpos > 1.0 or t_CONSTANTneg > 1.0)
+    # PT1 dynamics only if a time constant exceeds one time step; otherwise
+    # the data resolution cannot resolve the transient (e.g. 1-min data).
+    use_pt1_dynamics     = bool(t_CONSTANTpos > step_s or t_CONSTANTneg > step_s)
     pt1_factor_pos = 1.0 - np.exp(-(dt * 3600.0) / t_CONSTANTpos) if t_CONSTANTpos > 0.0 else 0.0
     pt1_factor_neg = 1.0 - np.exp(-(dt * 3600.0) / t_CONSTANTneg) if t_CONSTANTneg > 0.0 else 0.0
 
     I_ratelimit_pos, I_ratelimit_neg, I_no_ratelimit_pos, I_no_ratelimit_neg = \
         _compute_ratelimits(s.WB)
+    # Steady-state ramp [A/s] -> [A per time step]. The single jump after
+    # start (I_no_ratelimit_*) is a current step [A] and is not scaled.
+    I_ratelimit_pos *= step_s
+    I_ratelimit_neg *= step_s
 
     P_ratelimit_pos_init = 22000.0
     P_ratelimit_neg_init = 22000.0
@@ -715,8 +722,8 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     time_to_departure[:, 1]  = np.maximum(0.0, time_to_departure[:, 2] - t_stop_phaseswitch * dt)
     time_to_departure[:, 0]  = np.maximum(0.0, time_to_departure[:, 2] - np.ceil(0.5 * t_hold_off_min) * dt)
 
-    # Dead-time shift of Pd
-    t_DEAD_steps = round(t_DEAD)
+    # Dead-time shift of Pd: t_DEAD [s] -> time steps
+    t_DEAD_steps = _round_half_away(t_DEAD / step_s)
     if t_DEAD_steps > 0:
         Pd_shifted = np.concatenate([
             np.zeros(t_DEAD_steps, dtype=np.float64),
@@ -730,7 +737,7 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     # =========================================================================
     para = dict(
         dt=dt, steps_per_minute=steps_per_minute,
-        t_DEAD=t_DEAD, use_pt1_dynamics=use_pt1_dynamics, pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
+        t_DEAD=t_DEAD, t_DEAD_steps=t_DEAD_steps, use_pt1_dynamics=use_pt1_dynamics, pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
         t_hold_off_min=t_hold_off_min,
         t_wait2charge_min=t_wait2charge_min,
         t_hold_phaseswitch_min=t_hold_phaseswitch_min,
@@ -803,6 +810,12 @@ def _count_header_lines(path: Path) -> int:
         except ValueError:
             count += 1
     return count
+
+
+def _round_half_away(x: float) -> int:
+    """Round half away from zero, as MATLAB's round(). Python's built-in
+    round() rounds half to even (round(2.5) == 2, MATLAB: 3)."""
+    return int(np.sign(x) * np.floor(abs(x) + 0.5))
 
 
 def _is_set(val) -> bool:

@@ -32,6 +32,7 @@ class TimeParams(NamedTuple):
     dt: float
     steps_per_minute: float
     t_DEAD: float
+    t_DEAD_steps: int
     use_pt1_dynamics: bool
     pt1_factor_pos: float
     pt1_factor_neg: float
@@ -120,6 +121,7 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     dt               = float(para["dt"])
     steps_per_minute            = float(para["steps_per_minute"])
     t_DEAD           = float(para["t_DEAD"])
+    t_DEAD_steps     = int(para["t_DEAD_steps"])
     use_pt1_dynamics              = bool(para["use_pt1_dynamics"])
     pt1_factor_pos          = float(para["pt1_factor_pos"])
     pt1_factor_neg          = float(para["pt1_factor_neg"])
@@ -200,7 +202,8 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     # _sim_loop() expects (see class definitions above).
     # ------------------------------------------------------------------
     time_params = TimeParams(
-        dt=dt, steps_per_minute=steps_per_minute, t_DEAD=t_DEAD, use_pt1_dynamics=use_pt1_dynamics,
+        dt=dt, steps_per_minute=steps_per_minute, t_DEAD=t_DEAD, t_DEAD_steps=t_DEAD_steps,
+        use_pt1_dynamics=use_pt1_dynamics,
         pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
         t_hold_off_min=t_hold_off_min,
         t_wait2charge_min=t_wait2charge_min,
@@ -339,10 +342,10 @@ def _sim_loop(
     # ------------------------------------------------------------------
     # Init
     # ------------------------------------------------------------------
-    # tstart depends on time_params.t_DEAD: the first round(time_params.t_DEAD) steps of the
+    # tstart depends on the dead time: the first t_DEAD_steps steps of the
     # dead-time-shifted Pd are zero-padded (see decode_inputs), so the loop
     # must not start before that.
-    tstart = max(1, round(time_params.t_DEAD))
+    tstart = max(1, time_params.t_DEAD_steps)
     E_b0   = power_params.min_soe            # initial battery SOE = the configured minimum
     E_b[0] = E_b0
     P_setpoint  = 0.0
