@@ -430,8 +430,9 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     pl      : ForecastSettings instance, 0 or None  (0/None = no forecast)
     random_draws  : np.ndarray, 0 or None
                 0     → no random plug-in logic
-                1     → generate new random array (reproducible seed)
-                array → use directly
+                1     → generate new array of uniformly distributed random
+                        numbers in [0, 1) (reproducible seed, cf. MATLAB rand)
+                array → use directly (values must lie in [0, 1])
 
     Returns
     -------
@@ -471,7 +472,7 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
         random_draws = None
     elif np.isscalar(random_draws) and random_draws == 1:
         rng        = np.random.default_rng(42)
-        random_draws = rng.standard_normal(t)
+        random_draws = rng.random(t)   # uniform in [0, 1), cf. MATLAB rand()
     else:
         random_draws = np.asarray(random_draws, dtype=np.float64)
 
