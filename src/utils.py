@@ -719,8 +719,10 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     is_first_departure_target       = (target_soe == soe_target_first_departure)
     time_to_departure        = np.zeros((t, 3), dtype=np.float64)
     time_to_departure[:, 2]  = (time_to_departure_first * is_first_departure_target + time_to_departure_next * (~is_first_departure_target)) * dt
-    time_to_departure[:, 1]  = np.maximum(0.0, time_to_departure[:, 2] - t_stop_phaseswitch * dt)
-    time_to_departure[:, 0]  = np.maximum(0.0, time_to_departure[:, 2] - np.ceil(0.5 * t_hold_off_min) * dt)
+    # Offsets for the panic check [h]: t_stop_phaseswitch and t_hold_off_min
+    # are given in minutes -> steps (steps_per_minute) -> hours (dt).
+    time_to_departure[:, 1]  = np.maximum(0.0, time_to_departure[:, 2] - t_stop_phaseswitch * steps_per_minute * dt)
+    time_to_departure[:, 0]  = np.maximum(0.0, time_to_departure[:, 2] - np.ceil(0.5 * t_hold_off_min * steps_per_minute) * dt)
 
     # Dead-time shift of Pd: t_DEAD [s] -> time steps
     t_DEAD_steps = _round_half_away(t_DEAD / step_s)
