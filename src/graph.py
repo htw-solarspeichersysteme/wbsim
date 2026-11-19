@@ -3,9 +3,9 @@
 # Loads the output of a simulation run (simulation_call.py) and plots it.
 #
 # Run from the project root, after simulation_call.py has produced
-# data/processed/sim_results.pkl:
-#   python -m src.graph
-#   python src/graph.py
+# data/processed/sim_results.pkl. The figure is an interactive Jupyter
+# widget: run the cells in a notebook or the VS Code interactive window
+# (a plain "python src/graph.py" in a terminal cannot display it).
 #
 #%%
 
@@ -32,6 +32,7 @@ try:
     pio.renderers.default = "vscode"
     from plotly_resampler import FigureWidgetResampler
     import plotly.graph_objects as go
+    from IPython.display import display
 except ImportError as e:
     raise ImportError(
         "graph.py needs the plotting extras, which are intentionally NOT "
@@ -65,4 +66,6 @@ fig = FigureWidgetResampler(go.Figure(),default_n_shown_samples=5000)
 fig.add_trace(go.Scattergl(name="P_wb", mode="lines"), hf_x=dtime_list, hf_y=P_wb)
 fig.add_trace(go.Scattergl(name="P_dp", mode="lines"), hf_x=dtime_list, hf_y=Pdp)
 fig.update_layout(xaxis_title="Time", yaxis_title="Power in W", height=500)
-fig
+# Explicit display(): with plotly >= 6 (anywidget-based FigureWidget) a bare
+# "fig" at the end of a cell does not reliably render the widget.
+display(fig)

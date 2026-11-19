@@ -1,0 +1,14 @@
+# Python bytecode (regenerated on every import)
+__pycache__/
+*.py[cod]
+
+# Virtual environment and notebook checkpoints
+.venv/
+.ipynb_checkpoints/
+
+# Simulation output
+data/processed/
+
+# Large / externally hosted input data (Zenodo) and local MATLAB files
+data/raw/Pd.csv
+data/raw/*.mat

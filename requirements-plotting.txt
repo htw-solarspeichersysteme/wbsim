@@ -1,7 +1,7 @@
 # Optional: only needed to run graph.py (interactive plotting).
 # Install in addition to requirements.txt:
 #   pip install -r requirements.txt -r requirements-plotting.txt
-plotly==6.0.0
+plotly>=6.0.1,<7    # 6.0.0: FigureWidget fails with anywidget (plotly.py #5027); <7: plotly-resampler 0.11
 plotly-resampler==0.11.0
 ipywidgets>=8.0.0
 anywidget>=0.9.0

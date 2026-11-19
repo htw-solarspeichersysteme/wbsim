@@ -418,6 +418,44 @@ def load_drive_profile(
 # =============================================================================
 # decode_inputs
 # =============================================================================
+def compute_forecast(Pd, location_profile, E_drive, H, t_hor):
+    """
+    Forecast quantities at every arrival time step (E_drive > 0).
+
+    For an arrival at 0-based index t the window is [t, min(n-1, t+H)]
+    (inclusive), i.e. MATLAB t:min(end, t+pl.t_hor/dt) shifted to 0-based.
+    The window starts at t, so the trip that has just ended (E_drive[t])
+    is part of E_drive_fc -- identical to MATLAB.
+
+        E_pv_fc[t]    = mean(max(Pd,0) * (location_profile==1)) * t_hor/1000   [kWh]
+        E_drive_fc[t] = sum(E_drive)                                           [kWh]
+
+    The mean is taken over the (possibly truncated) window but scaled with
+    the full t_hor, as in MATLAB (mean(P_pvfc)*pl.t_hor/1000).
+
+    Parameters
+    ----------
+    Pd               : dead-time-shifted surplus power [W] (same array as in the loop)
+    location_profile : 1 = at home
+    E_drive          : trip energy at arrival [kWh]
+    H                : horizon in time steps (integer, = t_hor/dt)
+    t_hor            : horizon [h]
+
+    Returns
+    -------
+    E_pv_fc, E_drive_fc : np.ndarray float64, length n, non-zero only at arrivals
+    """
+    n = len(Pd)
+    E_pv_fc    = np.zeros(n, dtype=np.float64)
+    E_drive_fc = np.zeros(n, dtype=np.float64)
+    for t0 in np.flatnonzero(E_drive > 0.0):
+        e = min(n - 1, t0 + H) + 1                       # exclusive slice end
+        P_pvfc = np.maximum(Pd[t0:e], 0.0) * (location_profile[t0:e] == 1)
+        E_pv_fc[t0]    = np.mean(P_pvfc) * t_hor / 1000.0
+        E_drive_fc[t0] = np.sum(E_drive[t0:e])
+    return E_pv_fc, E_drive_fc
+
+
 def decode_inputs(Pd, s, lp, pl, random_draws):
     """
     Prepares all inputs for the wbsim_7_81 simulation loop.
@@ -430,8 +468,9 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     pl      : ForecastSettings instance, 0 or None  (0/None = no forecast)
     random_draws  : np.ndarray, 0 or None
                 0     → no random plug-in logic
-                1     → generate new random array (reproducible seed)
-                array → use directly
+                1     → generate new array of uniformly distributed random
+                        numbers in [0, 1) (reproducible seed, cf. MATLAB rand)
+                array → use directly (values must lie in [0, 1])
 
     Returns
     -------
@@ -471,7 +510,7 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
         random_draws = None
     elif np.isscalar(random_draws) and random_draws == 1:
         rng        = np.random.default_rng(42)
-        random_draws = rng.standard_normal(t)
+        random_draws = rng.random(t)   # uniform in [0, 1), cf. MATLAB rand()
     else:
         random_draws = np.asarray(random_draws, dtype=np.float64)
 
@@ -508,6 +547,20 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     # =========================================================================
     dt    = float(s.WB.dt)
     steps_per_minute = 1.0 / 60.0 / dt
+    step_s           = dt * 3600.0      # length of one time step [s]
+
+    # Forecast horizon in time steps. MATLAB indexes t:t+pl.t_hor/dt, which
+    # requires an integer step count; a non-integer value would be truncated
+    # silently by the colon operator, so it is rejected here instead.
+    H = 0
+    if use_forecast == 1:
+        H_float = t_hor / dt
+        H = int(round(H_float))
+        if abs(H_float - H) > 1e-9 * max(1.0, abs(H_float)) or H < 1:
+            raise ValueError(
+                f"Forecast horizon t_hor/dt = {t_hor}/{dt} = {H_float} time steps "
+                "is not a positive integer; choose t_hor as a multiple of dt.")
+    pl_dict["H"] = H
 
     P_WB2EV_min    = float(s.WB.P_WB2EV_min)
     P_WB2EV_max    = float(s.WB.P_WB2EV_max)
@@ -545,12 +598,18 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     t_DEAD = float(s.WB.t_DEAD)
 
     t_CONSTANTpos, t_CONSTANTneg = _compute_time_constants(s.WB, t_DEAD)
-    use_pt1_dynamics     = bool(t_CONSTANTpos > 1.0 or t_CONSTANTneg > 1.0)
+    # PT1 dynamics only if a time constant exceeds one time step; otherwise
+    # the data resolution cannot resolve the transient (e.g. 1-min data).
+    use_pt1_dynamics     = bool(t_CONSTANTpos > step_s or t_CONSTANTneg > step_s)
     pt1_factor_pos = 1.0 - np.exp(-(dt * 3600.0) / t_CONSTANTpos) if t_CONSTANTpos > 0.0 else 0.0
     pt1_factor_neg = 1.0 - np.exp(-(dt * 3600.0) / t_CONSTANTneg) if t_CONSTANTneg > 0.0 else 0.0
 
     I_ratelimit_pos, I_ratelimit_neg, I_no_ratelimit_pos, I_no_ratelimit_neg = \
         _compute_ratelimits(s.WB)
+    # Steady-state ramp [A/s] -> [A per time step]. The single jump after
+    # start (I_no_ratelimit_*) is a current step [A] and is not scaled.
+    I_ratelimit_pos *= step_s
+    I_ratelimit_neg *= step_s
 
     P_ratelimit_pos_init = 22000.0
     P_ratelimit_neg_init = 22000.0
@@ -712,11 +771,13 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     is_first_departure_target       = (target_soe == soe_target_first_departure)
     time_to_departure        = np.zeros((t, 3), dtype=np.float64)
     time_to_departure[:, 2]  = (time_to_departure_first * is_first_departure_target + time_to_departure_next * (~is_first_departure_target)) * dt
-    time_to_departure[:, 1]  = np.maximum(0.0, time_to_departure[:, 2] - t_stop_phaseswitch * dt)
-    time_to_departure[:, 0]  = np.maximum(0.0, time_to_departure[:, 2] - np.ceil(0.5 * t_hold_off_min) * dt)
+    # Offsets for the panic check [h]: t_stop_phaseswitch and t_hold_off_min
+    # are given in minutes -> steps (steps_per_minute) -> hours (dt).
+    time_to_departure[:, 1]  = np.maximum(0.0, time_to_departure[:, 2] - t_stop_phaseswitch * steps_per_minute * dt)
+    time_to_departure[:, 0]  = np.maximum(0.0, time_to_departure[:, 2] - np.ceil(0.5 * t_hold_off_min * steps_per_minute) * dt)
 
-    # Dead-time shift of Pd
-    t_DEAD_steps = round(t_DEAD)
+    # Dead-time shift of Pd: t_DEAD [s] -> time steps
+    t_DEAD_steps = _round_half_away(t_DEAD / step_s)
     if t_DEAD_steps > 0:
         Pd_shifted = np.concatenate([
             np.zeros(t_DEAD_steps, dtype=np.float64),
@@ -725,12 +786,25 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     else:
         Pd_shifted = Pd.astype(np.float64)
 
+    # Forecast inputs: PV and drive energy over the horizon at every arrival
+    # (depends on input data only, so computed once here instead of slicing
+    # inside the loop). Empty arrays when the forecast is disabled; they are
+    # never indexed in that case.
+    if use_forecast == 1:
+        E_pv_fc, E_drive_fc = compute_forecast(
+            Pd_shifted, location_profile, E_drive, H, t_hor)
+        target_soe_base = target_soe.copy()
+    else:
+        E_pv_fc         = np.zeros(0, dtype=np.float64)
+        E_drive_fc      = np.zeros(0, dtype=np.float64)
+        target_soe_base = np.zeros(0, dtype=np.float64)
+
     # =========================================================================
     # Build output dicts
     # =========================================================================
     para = dict(
         dt=dt, steps_per_minute=steps_per_minute,
-        t_DEAD=t_DEAD, use_pt1_dynamics=use_pt1_dynamics, pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
+        t_DEAD=t_DEAD, t_DEAD_steps=t_DEAD_steps, use_pt1_dynamics=use_pt1_dynamics, pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
         t_hold_off_min=t_hold_off_min,
         t_wait2charge_min=t_wait2charge_min,
         t_hold_phaseswitch_min=t_hold_phaseswitch_min,
@@ -780,6 +854,9 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
         idx_first_departure_y =idx_first_departure_y,
         idx_next_departure_y =idx_next_departure_y,
         time_to_departure             =time_to_departure,
+        E_pv_fc          =E_pv_fc,
+        E_drive_fc       =E_drive_fc,
+        target_soe_base  =target_soe_base,
     )
 
     return para, ts, pl_dict, random_draws
@@ -803,6 +880,12 @@ def _count_header_lines(path: Path) -> int:
         except ValueError:
             count += 1
     return count
+
+
+def _round_half_away(x: float) -> int:
+    """Round half away from zero, as MATLAB's round(). Python's built-in
+    round() rounds half to even (round(2.5) == 2, MATLAB: 3)."""
+    return int(np.sign(x) * np.floor(abs(x) + 0.5))
 
 
 def _is_set(val) -> bool:

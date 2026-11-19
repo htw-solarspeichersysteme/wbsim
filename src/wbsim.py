@@ -32,6 +32,7 @@ class TimeParams(NamedTuple):
     dt: float
     steps_per_minute: float
     t_DEAD: float
+    t_DEAD_steps: int
     use_pt1_dynamics: bool
     pt1_factor_pos: float
     pt1_factor_neg: float
@@ -91,6 +92,13 @@ class LookupTables(NamedTuple):
     I_min_deviation_lookup: float
 
 
+class ForecastParams(NamedTuple):
+    H: int              # forecast horizon in time steps (= t_hor/dt)
+    f_pvdrive: float    # sunny: E_pv > f_pvdrive * E_drive
+    f_pvdod: float      # sunny: E_pv > f_pvdod * depth of discharge
+    soc_max: float      # sunny: SOC below which the DoD criterion applies
+
+
 # =============================================================================
 # Public entry point
 # =============================================================================
@@ -120,6 +128,7 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     dt               = float(para["dt"])
     steps_per_minute            = float(para["steps_per_minute"])
     t_DEAD           = float(para["t_DEAD"])
+    t_DEAD_steps     = int(para["t_DEAD_steps"])
     use_pt1_dynamics              = bool(para["use_pt1_dynamics"])
     pt1_factor_pos          = float(para["pt1_factor_pos"])
     pt1_factor_neg          = float(para["pt1_factor_neg"])
@@ -165,6 +174,12 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     Pobc_max         = float(para["Pobc_max"])
     P_obc_panic      = float(para["P_obc_panic"])
     use_forecast          = int(pl_dict["use_forecast"])
+    forecast_params = ForecastParams(
+        H=int(pl_dict["H"]),
+        f_pvdrive=float(pl_dict["f_pvdrive"]),
+        f_pvdod=float(pl_dict["f_pvdod"]),
+        soc_max=float(pl_dict["soc_max"]),
+    )
     # lookup arrays
     P_discretV1ph  = para["P_discretV1ph"]
     P_discretV3ph  = para["P_discretV3ph"]
@@ -185,6 +200,10 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     target_soe            = ts["target_soe"].astype(np.float64)
     soe_target_first_departure = ts["soe_target_first_departure"].astype(np.float64)
     time_to_departure                  = ts["time_to_departure"].astype(np.float64)
+    # Forecast inputs (empty arrays if use_forecast == 0)
+    E_pv_fc               = ts["E_pv_fc"].astype(np.float64)
+    E_drive_fc            = ts["E_drive_fc"].astype(np.float64)
+    target_soe_base       = ts["target_soe_base"].astype(np.float64)
 
     # ------------------------------------------------------------------
     # random_draws (None → zero array, use_random_connect=False)
@@ -200,7 +219,8 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
     # _sim_loop() expects (see class definitions above).
     # ------------------------------------------------------------------
     time_params = TimeParams(
-        dt=dt, steps_per_minute=steps_per_minute, t_DEAD=t_DEAD, use_pt1_dynamics=use_pt1_dynamics,
+        dt=dt, steps_per_minute=steps_per_minute, t_DEAD=t_DEAD, t_DEAD_steps=t_DEAD_steps,
+        use_pt1_dynamics=use_pt1_dynamics,
         pt1_factor_pos=pt1_factor_pos, pt1_factor_neg=pt1_factor_neg,
         t_hold_off_min=t_hold_off_min,
         t_wait2charge_min=t_wait2charge_min,
@@ -244,7 +264,8 @@ def wbsim_7_81(para: dict, ts: dict, pl_dict: dict, random_draws) -> dict:
         Pd, location_profile, E_drive, is_long_trip,
         target_soe, soe_target_first_departure, time_to_departure,
         random_draws, use_random_connect, use_forecast,
-        time_params, power_params, lookup_tables,
+        E_pv_fc, E_drive_fc, target_soe_base,
+        time_params, power_params, lookup_tables, forecast_params,
     )
 
     # ------------------------------------------------------------------
@@ -277,10 +298,12 @@ def _sim_loop(
     Pd, location_profile, E_drive, is_long_trip,
     target_soe, soe_target_first_departure, time_to_departure,
     random_draws, use_random_connect, use_forecast,
+    # Forecast inputs from decode_inputs() (empty if use_forecast == 0)
+    E_pv_fc, E_drive_fc, target_soe_base,
     # Grouped scalar/lookup parameters (NamedTuples, read-only for the
-    # duration of the loop -- see TimeParams / PowerParams / LookupTables
-    # near the top of this file)
-    time_params, power_params, lookup_tables,
+    # duration of the loop -- see TimeParams / PowerParams / LookupTables /
+    # ForecastParams near the top of this file)
+    time_params, power_params, lookup_tables, forecast_params,
 ):
     """
     Compiled timestep loop: evaluates status, derives the power set-point,
@@ -339,10 +362,10 @@ def _sim_loop(
     # ------------------------------------------------------------------
     # Init
     # ------------------------------------------------------------------
-    # tstart depends on time_params.t_DEAD: the first round(time_params.t_DEAD) steps of the
+    # tstart depends on the dead time: the first t_DEAD_steps steps of the
     # dead-time-shifted Pd are zero-padded (see decode_inputs), so the loop
     # must not start before that.
-    tstart = max(1, round(time_params.t_DEAD))
+    tstart = max(1, time_params.t_DEAD_steps)
     E_b0   = power_params.min_soe            # initial battery SOE = the configured minimum
     E_b[0] = E_b0
     P_setpoint  = 0.0
@@ -381,11 +404,29 @@ def _sim_loop(
                     p2_nc = p2_nc_precalc[i_soe2 - 1]
                     status_connected = (1.0 - p1_nc * p2_nc) >= random_draws[t]
 
-                    # Forecast logic – simplified:
-                    # Full forecast requires slicing Pd/location_profile in the loop,
-                    # which is legal in numba but kept as a placeholder here.
-                    # use_forecast==1 branch: target_soe adjustment omitted in this
-                    # release; activate by setting use_forecast=0 (default).
+                    # Forecast (MATLAB: if tf_prog == 1). Window [t, t+H]
+                    # inclusive, truncated at the series end. E_pv_fc and
+                    # E_drive_fc are precomputed in decode_inputs(); only the
+                    # state-dependent part (E_b0) is evaluated here.
+                    # time_to_departure stays as precomputed (as in MATLAB);
+                    # only target_soe is overwritten.
+                    if use_forecast == 1:
+                        t_end = min(n - 1, t + forecast_params.H) + 1   # exclusive
+                        E_pvfc_sum     = E_pv_fc[t]
+                        E_drive_fc_sum = E_drive_fc[t]
+                        tf_sunny = (E_pvfc_sum > forecast_params.f_pvdrive * E_drive_fc_sum) or \
+                                   (E_b0 / power_params.E_bat_ev < forecast_params.soc_max and
+                                    E_pvfc_sum > forecast_params.f_pvdod * (power_params.E_bat_ev - E_b0))
+                        # Factors 2 (cloudy) and 0.8 (sunny) hard-coded as in
+                        # MATLAB (pl.cloudy.f_drivepv / pl.sunny.f_red_pnc1 unused).
+                        tf_cloudy = E_drive_fc_sum > 2.0 * E_pvfc_sum
+                        if tf_sunny:
+                            target_soe[t:t_end] = power_params.min_soe
+                            status_connected = ((1.0 - p1_nc * 0.8) >= random_draws[t]) or status_connected
+                        elif tf_cloudy:
+                            target_soe[t:t_end] = power_params.E_bat_ev
+                        else:
+                            target_soe[t:t_end] = target_soe_base[t:t_end]
 
                 if counter_standby > 0 and status_connected:
                     counter_standby = 0.0
