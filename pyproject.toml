@@ -32,7 +32,7 @@ dependencies = [
 # (kept separate from requirements.txt/dependencies above so a plain
 # core install stays fast for anyone who doesn't need to plot).
 plotting = [
-    "plotly>=6.0.0",
+    "plotly>=6.0.1,<7",   # 6.0.0: FigureWidget bug (plotly.py #5027); <7: plotly-resampler 0.11
     "plotly-resampler>=0.11.0",
     "ipywidgets>=8.0.0",
     "anywidget>=0.9.0",
