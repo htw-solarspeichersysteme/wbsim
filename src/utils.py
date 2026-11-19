@@ -418,6 +418,44 @@ def load_drive_profile(
 # =============================================================================
 # decode_inputs
 # =============================================================================
+def compute_forecast(Pd, location_profile, E_drive, H, t_hor):
+    """
+    Forecast quantities at every arrival time step (E_drive > 0).
+
+    For an arrival at 0-based index t the window is [t, min(n-1, t+H)]
+    (inclusive), i.e. MATLAB t:min(end, t+pl.t_hor/dt) shifted to 0-based.
+    The window starts at t, so the trip that has just ended (E_drive[t])
+    is part of E_drive_fc -- identical to MATLAB.
+
+        E_pv_fc[t]    = mean(max(Pd,0) * (location_profile==1)) * t_hor/1000   [kWh]
+        E_drive_fc[t] = sum(E_drive)                                           [kWh]
+
+    The mean is taken over the (possibly truncated) window but scaled with
+    the full t_hor, as in MATLAB (mean(P_pvfc)*pl.t_hor/1000).
+
+    Parameters
+    ----------
+    Pd               : dead-time-shifted surplus power [W] (same array as in the loop)
+    location_profile : 1 = at home
+    E_drive          : trip energy at arrival [kWh]
+    H                : horizon in time steps (integer, = t_hor/dt)
+    t_hor            : horizon [h]
+
+    Returns
+    -------
+    E_pv_fc, E_drive_fc : np.ndarray float64, length n, non-zero only at arrivals
+    """
+    n = len(Pd)
+    E_pv_fc    = np.zeros(n, dtype=np.float64)
+    E_drive_fc = np.zeros(n, dtype=np.float64)
+    for t0 in np.flatnonzero(E_drive > 0.0):
+        e = min(n - 1, t0 + H) + 1                       # exclusive slice end
+        P_pvfc = np.maximum(Pd[t0:e], 0.0) * (location_profile[t0:e] == 1)
+        E_pv_fc[t0]    = np.mean(P_pvfc) * t_hor / 1000.0
+        E_drive_fc[t0] = np.sum(E_drive[t0:e])
+    return E_pv_fc, E_drive_fc
+
+
 def decode_inputs(Pd, s, lp, pl, random_draws):
     """
     Prepares all inputs for the wbsim_7_81 simulation loop.
@@ -510,6 +548,19 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     dt    = float(s.WB.dt)
     steps_per_minute = 1.0 / 60.0 / dt
     step_s           = dt * 3600.0      # length of one time step [s]
+
+    # Forecast horizon in time steps. MATLAB indexes t:t+pl.t_hor/dt, which
+    # requires an integer step count; a non-integer value would be truncated
+    # silently by the colon operator, so it is rejected here instead.
+    H = 0
+    if use_forecast == 1:
+        H_float = t_hor / dt
+        H = int(round(H_float))
+        if abs(H_float - H) > 1e-9 * max(1.0, abs(H_float)) or H < 1:
+            raise ValueError(
+                f"Forecast horizon t_hor/dt = {t_hor}/{dt} = {H_float} time steps "
+                "is not a positive integer; choose t_hor as a multiple of dt.")
+    pl_dict["H"] = H
 
     P_WB2EV_min    = float(s.WB.P_WB2EV_min)
     P_WB2EV_max    = float(s.WB.P_WB2EV_max)
@@ -735,6 +786,19 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
     else:
         Pd_shifted = Pd.astype(np.float64)
 
+    # Forecast inputs: PV and drive energy over the horizon at every arrival
+    # (depends on input data only, so computed once here instead of slicing
+    # inside the loop). Empty arrays when the forecast is disabled; they are
+    # never indexed in that case.
+    if use_forecast == 1:
+        E_pv_fc, E_drive_fc = compute_forecast(
+            Pd_shifted, location_profile, E_drive, H, t_hor)
+        target_soe_base = target_soe.copy()
+    else:
+        E_pv_fc         = np.zeros(0, dtype=np.float64)
+        E_drive_fc      = np.zeros(0, dtype=np.float64)
+        target_soe_base = np.zeros(0, dtype=np.float64)
+
     # =========================================================================
     # Build output dicts
     # =========================================================================
@@ -790,6 +854,9 @@ def decode_inputs(Pd, s, lp, pl, random_draws):
         idx_first_departure_y =idx_first_departure_y,
         idx_next_departure_y =idx_next_departure_y,
         time_to_departure             =time_to_departure,
+        E_pv_fc          =E_pv_fc,
+        E_drive_fc       =E_drive_fc,
+        target_soe_base  =target_soe_base,
     )
 
     return para, ts, pl_dict, random_draws
